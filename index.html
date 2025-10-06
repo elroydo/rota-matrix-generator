@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en" class="transition-colors duration-300">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rota Matrix Generator • CSV → Weekly Matrix (XLSX)</title>
+  
+  <!-- FIX 2: No-flash theme bootstrap -->
+  <script>
+    try {
+      const stored = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (stored === 'dark' || (!stored && prefersDark)) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
+    } catch {}
+  </script>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // FIX 1: Set darkMode: 'class' to enable JavaScript toggling
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { 
+        extend: { 
+          fontFamily: { 
+            sans: ["Inter","system-ui","-apple-system","Segoe UI","Roboto","Ubuntu","Cantarell","Noto Sans","Helvetica Neue","Arial","sans-serif"] 
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    /* Dark Mode Toggle Icon (Moon/Sun) */
+    .icon-toggle { width: 20px; height: 20px; cursor: pointer; }
+    
+    /* Dropzone Styling for both light and dark mode */
+    .dropzone.dragover { 
+      border-color: rgb(59 130 246); 
+      background: rgb(239 246 255); 
+    }
+    .dark .dropzone.dragover { 
+      border-color: rgb(147 197 253);
+      background: rgb(30 41 59);
+    }
+    .file-loaded { border-color: rgb(16 185 129); }
+    .dark .file-loaded { border-color: rgb(52 211 153); }
+
+    /* Style for scrollable log */
+    #log { 
+      max-height: 15rem;
+      overflow-y: auto;
+      padding-right: 0.5rem;
+      min-height: 2rem;
+    }
+    /* Style for empty log state (Light mode) */
+    #log:empty:before {
+        content: 'No activity yet. Load your shifts to begin.';
+        color: #94a3b8;
+        font-style: italic;
+    }
+    /* Style for empty log state (Dark mode) */
+    .dark #log:empty:before {
+        content: 'No activity yet. Load your shifts to begin.';
+        color: #64748b;
+    }
+
+    /* Custom Toggle Switch Styles */
+    .dot {
+        box-shadow: 0 0 2px rgba(0, 0, 0, 0.2);
+    }
+    /* Change background color when checked */
+    input:checked + .block { 
+        background-color: rgb(37 99 235) !important; /* blue-600 */
+    } 
+    /* Move dot when checked */
+    input:checked ~ .dot { 
+        transform: translateX(100%); 
+        background-color: #ffffff !important; /* White dot when active */
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-50 transition-colors duration-300">
+  <div class="max-w-4xl mx-auto px-4 py-8">
+    <header class="mb-6 flex justify-between items-start">
+      <div>
+        <h1 class="text-3xl font-bold tracking-tight">Rota Matrix Generator</h1>
+        <p class="text-slate-600 dark:text-slate-400 mt-1">Convert raw shift data into a normalized, weekly matrix.</p>
+      </div>
+      
+      <!-- Dark Mode Toggle -->
+      <button id="darkModeToggle" class="p-2 rounded-full text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors duration-300" aria-label="Toggle dark mode">
+        <!-- Sun (Light Mode) Icon -->
+        <svg id="sunIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon-toggle"><path d="M12 2.25a.75.75 0 0 1 .75.75v2.25a.75.75 0 0 1-1.5 0V3a.75.75 0 0 1 .75-.75ZM7.051 6.829a.75.75 0 0 0-1.06 1.06l1.59 1.59a.75.75 0 0 0 1.06-1.06l-1.59-1.59ZM16.95 6.829l1.59 1.59a.75.75 0 0 0 1.06-1.06l-1.59-1.59a.75.75 0 0 0-1.06 1.06ZM12 5.25a6.75 6.75 0 1 0 6.75 6.75A6.75 6.75 0 0 0 12 5.25ZM20.25 12a.75.75 0 0 1-.75.75h-2.25a.75.75 0 0 1 0-1.5H19.5a.75.75 0 0 1 .75.75ZM3.75 12a.75.75 0 0 1 .75-.75h2.25a.75.75 0 0 1 0 1.5H4.5a.75.75 0 0 1-.75-.75ZM16.95 17.171a.75.75 0 0 0 1.06 1.06l1.59-1.59a.75.75 0 0 0-1.06-1.06l-1.59 1.59ZM7.051 17.171l1.59 1.59a.75.75 0 0 0 1.06-1.06l-1.59-1.59a.75.75 0 0 0-1.06 1.06ZM12 18.75a.75.75 0 0 1 .75.75v2.25a.75.75 0 0 1-1.5 0v-2.25a.75.75 0 0 1 .75-.75Z"/></svg>
+        <!-- Moon (Dark Mode) Icon - Remains hidden by default -->
+        <svg id="moonIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="icon-toggle hidden"><path fill-rule="evenodd" d="M9.52 2.379a.75.75 0 0 1 .531.06C10.66 2.872 12 4.316 12 6c0 1.942-1.332 3.738-2.986 4.498A6.807 6.807 0 0 0 8 18a6.794 6.794 0 0 0 5.488 4.498A7.5 7.5 0 0 1 12 22.5c-3.12 0-6.062-1.464-8.086-3.864A10.51 10.51 0 0 1 10.5 4.5c1.455 0 2.86.377 4.123 1.071a.75.75 0 0 1 .06.531Z" clip-rule="evenodd" /></svg>
+      </button>
+    </header>
+
+    <section class="space-y-6">
+
+      <!-- Main CSV Drop Zone -->
+      <div id="drop" class="dropzone rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-150 dark:bg-slate-800 dark:border-slate-700 dark:shadow-lg">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 rounded-xl bg-slate-100 p-3 mt-1 dark:bg-slate-700">
+            <!-- Clock/Time Icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-slate-500 dark:text-slate-400"><path fill-rule="evenodd" d="M12 2.25a.75.75 0 0 1 .75.75v5.25A.75.75 0 0 1 12 8.25a.75.75 0 0 1-.75-.75V3a.75.75 0 0 1 .75-.75ZM18.575 7.601a.75.75 0 0 0-.75-1.299 10.5 10.5 0 0 0-10.749 0 .75.75 0 0 0-.75 1.299 12 12 0 1 0 11.249 0Z" clip-rule="evenodd" /></svg>
+          </div>
+          <div class="grow">
+            <p class="font-medium">Drop main shifts CSV here</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">or</p>
+            <label class="inline-flex items-center gap-2 mt-1 cursor-pointer text-blue-600 hover:underline dark:text-blue-400" id="fileLabel">
+              <input id="fileInput" type="file" accept=".csv" class="hidden" />
+              <span>Select the shifts file</span>
+            </label>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-3">Expected import headers: <span class="font-medium">Employee ID</span>, Employee, Group, Day, Date, Start Time, End Time, ...</p>
+            
+            <!-- File Status & Clear Button -->
+            <div id="mainFileStatusWrap" class="flex items-center gap-2 mt-2 hidden">
+              <p id="mainFileStatus" class="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 truncate"></p>
+              <button id="clearMainBtn" class="text-xs text-red-500 hover:text-red-700 font-medium whitespace-nowrap dark:text-red-400 dark:hover:text-red-600">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Leave CSV Drop Zone -->
+      <div id="leaveDrop" class="dropzone rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition duration-150 dark:bg-slate-800 dark:border-slate-700 dark:shadow-lg">
+        <div class="flex items-start gap-4">
+          <div class="shrink-0 rounded-xl bg-slate-100 p-3 mt-1 dark:bg-slate-700">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6 text-slate-500 dark:text-slate-400"><path d="M12 2.25a9.75 9.75 0 1 0 9.75 9.75A9.761 9.761 0 0 0 12 2.25ZM.75 5.25a.75.75 0 1 0-1.5 0v5.25c0 .414.336.75.75.75h4.5a.75.75 0 1 0 0-1.5h-3.75Z"/></svg>
+          </div>
+          <div class="grow">
+            <p class="font-medium">Optional leave/holiday CSV for the same week</p>
+            <p class="text-sm text-slate-500 dark:text-slate-400">or</p>
+            <label class="inline-flex items-center gap-2 mt-1 cursor-pointer text-blue-600 hover:underline dark:text-blue-400" id="leaveLabel">
+              <input id="leaveInput" type="file" accept=".csv" class="hidden" />
+              <span>Select a leave file</span>
+            </label>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mt-3">
+              Example headers: Employee ID, Employee, <span class="font-bold">Start Date</span>, <span class="font-bold">End Date</span>, Type.
+            </p>
+            
+            <!-- Leave Status & Clear Button -->
+            <div id="leaveFileStatusWrap" class="flex items-center gap-2 mt-2 hidden">
+              <p id="leaveFileStatus" class="text-xs font-mono font-semibold text-emerald-600 dark:text-emerald-400 truncate"></p>
+              <button id="clearLeaveBtn" class="text-xs text-red-500 hover:text-red-700 font-medium whitespace-nowrap dark:text-red-400 dark:hover:text-red-600">Clear</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Options -->
+      <div class="rounded-2xl bg-white border border-slate-200 p-5 shadow-sm dark:bg-slate-800 dark:border-slate-700">
+        <div class="flex flex-col gap-5">
+          
+          <!-- Normalization Toggle -->
+          <label for="normalizeToggle" class="flex items-center cursor-pointer select-none justify-between">
+            <span class="text-sm text-slate-800 dark:text-slate-200">Normalize times ending in <span class="font-mono">:01</span> to <span class="font-mono">:00</span></span>
+            <div class="relative">
+                <input id="normalizeToggle" type="checkbox" class="sr-only" checked>
+                <div class="block bg-slate-300 dark:bg-slate-600 w-10 h-6 rounded-full transition-colors duration-200 block"></div>
+                <div class="dot absolute left-1 top-1 bg-white dark:bg-slate-400 w-4 h-4 rounded-full transition-transform duration-200"></div>
+            </div>
+          </label>
+          
+          <!-- Empty Cell Fill Toggle -->
+          <label for="offToggle" class="flex items-center cursor-pointer select-none justify-between">
+            <span class="text-sm text-slate-800 dark:text-slate-200">Fill empty shift cells (for staff with shifts) with <span class="font-mono font-bold">'Off'</span></span>
+            <div class="relative">
+                <input id="offToggle" type="checkbox" class="sr-only">
+                <div class="block bg-slate-300 dark:bg-slate-600 w-10 h-6 rounded-full transition-colors duration-200 block"></div>
+                <div class="dot absolute left-1 top-1 bg-white dark:bg-slate-400 w-4 h-4 rounded-full transition-transform duration-200"></div>
+            </div>
+          </label>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button id="processBtn" class="px-4 py-2 rounded-xl bg-blue-600 text-white font-medium disabled:opacity-40 transition duration-150 hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600">Process</button>
+        <button id="downloadBtn" class="px-4 py-2 rounded-xl bg-emerald-600 text-white font-medium disabled:opacity-40 transition duration-150 hover:bg-emerald-700 dark:bg-emerald-700 dark:hover:bg-emerald-600" disabled>Download XLSX</button>
+      </div>
+      
+      <!-- Log -->
+      <div id="logWrap">
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm dark:bg-slate-800 dark:border-slate-700">
+          <div class="flex items-center justify-between mb-2">
+            <h2 class="font-semibold">Log</h2>
+            <button id="clearLog" class="text-sm text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">Clear</button>
+          </div>
+          <pre id="log" class="text-[11px] whitespace-pre-wrap text-slate-700 dark:text-slate-300"></pre>
+        </div>
+      </div>
+
+      <!-- Preview small -->
+      <div class="hidden" id="previewWrap">
+        <div class="rounded-xl bg-white border border-slate-200 p-4 shadow-sm dark:bg-slate-800 dark:border-slate-700">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="font-semibold">Preview</h2>
+            <span id="previewCount" class="text-xs text-slate-500 dark:text-slate-400"></span>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-xs">
+              <thead id="prevThead" class="text-left text-slate-600 dark:text-slate-400"></thead>
+              <tbody id="prevTbody" class="divide-y divide-slate-100 dark:divide-slate-700"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <footer class="text-xs text-slate-500 dark:text-slate-500 pt-2 pb-8">
+        <p class="mb-1">Disclaimer. For internal use only. Data is processed locally. Validate before distribution.</p>
+        <p>Rota Matrix Generator v1.3 • © 2025 Aether</p>
+      </footer>
+    </section>
+  </div>
+
+  <!-- Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <script>
+    // --- Dark Mode Logic (FIX 3: Refined Toggle) ---
+    const htmlEl = document.documentElement;
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const sunIcon = document.getElementById('sunIcon');
+    const moonIcon = document.getElementById('moonIcon');
+
+    function setIcons() {
+      // The theme state is now fully determined by the 'dark' class on <html>
+      const isDark = htmlEl.classList.contains('dark');
+      sunIcon.classList.toggle('hidden', isDark);
+      moonIcon.classList.toggle('hidden', !isDark);
+    }
+
+    // Initialize icons based on the class set by the bootstrap script above
+    setIcons();
+
+    // Add the toggle listener
+    darkModeToggle.addEventListener('click', () => {
+      const currentlyDark = htmlEl.classList.contains('dark');
+      const newDark = !currentlyDark;
+      
+      htmlEl.classList.toggle('dark', newDark);
+      localStorage.setItem('theme', newDark ? 'dark' : 'light');
+      setIcons();
+    });
+    // --- End Dark Mode Logic ---
+    
+    // --- Application Logic (Unchanged core functionality) ---
+    const fileInput = document.getElementById('fileInput');
+    const drop = document.getElementById('drop');
+    const leaveInput = document.getElementById('leaveInput');
+    const leaveDrop = document.getElementById('leaveDrop');
+
+    const mainFileStatus = document.getElementById('mainFileStatus');
+    const mainFileStatusWrap = document.getElementById('mainFileStatusWrap');
+    const leaveFileStatus = document.getElementById('leaveFileStatus');
+    const leaveFileStatusWrap = document.getElementById('leaveFileStatusWrap');
+
+    const clearMainBtn = document.getElementById('clearMainBtn');
+    const clearLeaveBtn = document.getElementById('clearLeaveBtn');
+
+    const processBtn = document.getElementById('processBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const normalizeToggle = document.getElementById('normalizeToggle');
+    const offToggle = document.getElementById('offToggle');
+
+    const logEl = document.getElementById('log');
+    const previewWrap = document.getElementById('previewWrap');
+    const prevThead = document.getElementById('prevThead');
+    const prevTbody = document.getElementById('prevTbody');
+    const previewCount = document.getElementById('previewCount');
+    const clearLog = document.getElementById('clearLog');
+
+    let parsedRows = [];
+    let leaveRows = [];
+    let outputRows = [];
+    let currentWeekStart = null;
+    let currentWeekEnd = null;
+    let isProcessed = false; 
+
+    const dayKeys = [
+      'Mon Start','Mon Finish','Tue Start','Tue Finish','Wed Start','Wed Finish','Thu Start','Thu Finish','Fri Start','Fri Finish','Sat Start','Sat Finish','Sun Start','Sun Finish'
+    ];
+
+    function log(msg){
+      logEl.textContent += `${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    clearLog.addEventListener('click', ()=>{ 
+        logEl.textContent = ''; 
+    });
+
+    // --- STATE MANAGEMENT ---
+    function updateProcessButton(processed) {
+        isProcessed = processed;
+        if (processed) {
+            processBtn.textContent = 'Reset';
+            processBtn.classList.remove('bg-blue-600', 'dark:bg-blue-700', 'dark:hover:bg-blue-600');
+            processBtn.classList.add('bg-slate-500', 'hover:bg-slate-600', 'dark:bg-slate-600', 'dark:hover:bg-slate-500');
+            fileInput.disabled = true;
+            leaveInput.disabled = true;
+            downloadBtn.disabled = false; 
+        } else {
+            processBtn.textContent = 'Process';
+            processBtn.classList.remove('bg-slate-500', 'hover:bg-slate-600', 'dark:bg-slate-600', 'dark:hover:bg-slate-500');
+            processBtn.classList.add('bg-blue-600', 'dark:bg-blue-700', 'dark:hover:bg-blue-600');
+            downloadBtn.disabled = true;
+            fileInput.disabled = false;
+            leaveInput.disabled = false;
+        }
+        
+        if (!processed && !parsedRows.length) {
+            processBtn.disabled = true;
+        } else {
+            processBtn.disabled = false;
+        }
+    }
+    
+    // Set initial state
+    if (!parsedRows.length) {
+        processBtn.disabled = true;
+    }
+    
+    function handleToggleChange() {
+      if (isProcessed) {
+        log('Option changed. Please re-process data.');
+        isProcessed = false;
+        updateProcessButton(false);
+        previewWrap.classList.add('hidden');
+      }
+    }
+
+    normalizeToggle.addEventListener('change', handleToggleChange);
+    offToggle.addEventListener('change', handleToggleChange);
+
+    // --- FILE CLEAR FUNCTIONS ---
+    function clearMainFile() {
+      parsedRows = [];
+      outputRows = [];
+      log(`Main shifts file cleared.`);
+      mainFileStatus.textContent = '';
+      mainFileStatusWrap.classList.add('hidden');
+      drop.classList.remove('file-loaded');
+      fileInput.value = '';
+      previewWrap.classList.add('hidden');
+      updateProcessButton(false);
+    }
+
+    function clearLeaveFile() {
+      leaveRows = [];
+      log(`Leave file cleared.`);
+      leaveFileStatus.textContent = '';
+      leaveFileStatusWrap.classList.add('hidden');
+      leaveDrop.classList.remove('file-loaded');
+      leaveInput.value = '';
+      if (isProcessed) {
+          log('Leave data removed. Please re-process to update the matrix.');
+          updateProcessButton(false);
+      }
+    }
+
+    clearMainBtn.addEventListener('click', clearMainFile);
+    clearLeaveBtn.addEventListener('click', clearLeaveFile);
+
+    // --- DATE UTILITIES ---
+    function parseDMY(s){
+      const [d,m,y] = String(s||'').split('/').map(Number);
+      if(!d||!m||!y) return null;
+      const dt = new Date(y, m-1, d);
+      dt.setHours(0,0,0,0);
+      return Number.isNaN(dt.getTime()) ? null : dt;
+    }
+    
+    function startOfWeekMonday(dt){
+      const t = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      const day = t.getDay() || 7;
+      t.setDate(t.getDate() - (day - 1));
+      t.setHours(0,0,0,0);
+      return t;
+    }
+    
+    function endOfWeekSunday(dt){
+      const s = startOfWeekMonday(dt);
+      const e = new Date(s);
+      e.setDate(e.getDate()+6);
+      e.setHours(23,59,59,999);
+      return e;
+    }
+
+    function getWeekNumber(d) {
+        d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay()||7));
+        var yearStart = new Date(Date.UTC(d.getUTCFullYear(),0,1));
+        return Math.ceil(( ( (d - yearStart) / 86400000) + 1)/7);
+    }
+    
+    function enumerateDatesInclusive(a,b){
+      const out = [];
+      if(!a||!b) return out;
+      const start = a <= b ? new Date(a) : new Date(b);
+      const end   = a <= b ? new Date(b) : new Date(a);
+      
+      start.setHours(0,0,0,0);
+      end.setHours(0,0,0,0);
+
+      for(let d=new Date(start); d<=end; d.setDate(d.getDate()+1)){
+        out.push(new Date(d));
+      }
+      return out;
+    }
+    
+    function dayKeyFromDate(dt){
+      return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getDay()];
+    }
+    // --- END DATE UTILITIES ---
+
+    function adjustTime(s){
+      let t = String(s||'').trim();
+      if(!t) return '';
+      if(normalizeToggle.checked) t = t.replace(/:01$/, ':00');
+      return t;
+    }
+
+    function parseNumber(x){
+      if(x === null || x === undefined) return NaN;
+      const n = parseFloat(String(x).replace(",","."));
+      return Number.isFinite(n) ? n : NaN;
+    }
+
+    function headersOk(hdrs){
+      const required = ['Employee ID','Employee','Group','Day','Date','Start Time','End Time','Minutes Break','Location','Role','Shift Rate','Hourly Rate','Hours','Cost','Notes'];
+      const missing = required.filter(h => !hdrs.includes(h));
+      if(missing.length){ log(`Missing headers: ${missing.join(', ')}`); }
+      return missing.length === 0;
+    }
+
+    function extractNumericCode(emp){
+      const m = String(emp||'').match(/(\d{3,})$/); 
+      return m ? m[1] : '';
+    }
+
+    function normaliseDay(d){
+      const v = String(d || '').trim().slice(0,3);
+      const map = { Mon:'Mon', Tue:'Tue', Wed:'Wed', Thu:'Thu', Fri:'Fri', Sat:'Sat', Sun:'Sun' };
+      return map[v] || null;
+    }
+    
+    function coalesceID(row){
+      return String(
+        row['Employee ID'] ?? row['EmployeeID'] ?? row['RotaCloud ID'] ?? row['ID'] ?? ''
+      ).trim();
+    }
+    
+    function normName(s){
+      return String(s||'').trim().replace(/\s+/g,' ').toLowerCase();
+    }
+    
+    function buildWeekWindowFromShifts(shiftRows){
+      const firstShiftWithDate = shiftRows.find(r => r['Date']);
+      const dt = parseDMY(firstShiftWithDate?.['Date']);
+      
+      const ws = dt ? startOfWeekMonday(dt) : null;
+      const we = dt ? endOfWeekSunday(dt) : null; 
+      
+      return {weekStart: ws, weekEnd: we};
+    }
+
+    function buildLeaveMap(leaveRows, weekStart, weekEnd){
+      const map = new Map(); 
+      for(const r of leaveRows){
+        const id = coalesceID(r);
+        const rawName = String(r['Employee'] || r['Name'] || '').trim();
+        const nameKey = normName(rawName);
+        if(!id && !nameKey) continue;
+
+        const sd = parseDMY(r['Start Date']);
+        const ed = parseDMY(r['End Date']);
+        
+        if(!sd || !ed) continue;
+
+        const dates = enumerateDatesInclusive(sd, ed).filter(d => {
+          if(!weekStart || !weekEnd) return true;
+          return d >= weekStart && d <= weekEnd;
+        });
+
+        if(dates.length === 0) continue;
+
+        const label = String(r['Type'] || 'Holiday').trim() || 'Holiday';
+        let entry = (id && map.get(id)) || (nameKey && map.get(nameKey));
+        if(!entry){
+          entry = { id: id, name: rawName, byDay: new Set(), label };
+        } 
+        
+        if(id && !map.has(id)) map.set(id, entry);
+        if(nameKey && !map.has(nameKey)) map.set(nameKey, entry);
+
+        for(const d of dates){
+          entry.byDay.add(dayKeyFromDate(d));
+        }
+      }
+      return map;
+    }
+    
+    // --- FILE HANDLING ---
+    function handleFile(file){
+      if(!file) return;
+      const fileName = file.name;
+      Papa.parse(file,{
+        header:true,
+        skipEmptyLines:true,
+        complete: res => {
+          parsedRows = res.data;
+          if(!parsedRows.length){ 
+            log(`No rows found in main shifts: ${fileName}.`); 
+            drop.classList.remove('file-loaded');
+            updateProcessButton(false);
+            return; 
+          }
+          const hdrs = Object.keys(parsedRows[0]);
+          if(!headersOk(hdrs)){
+            log('Fix headers in your export and try again.');
+            drop.classList.remove('file-loaded');
+            updateProcessButton(false);
+            return;
+          }
+          log(`${parsedRows.length} rows parsed from main shifts: ${fileName}`);
+          mainFileStatus.textContent = fileName;
+          mainFileStatusWrap.classList.remove('hidden');
+          drop.classList.add('file-loaded');
+          updateProcessButton(false);
+          fileInput.value = '';
+        },
+        error: err => {
+          log(`Parse error (main): ${err?.message || err}`);
+          mainFileStatus.textContent = `Error: ${err?.message || 'Parse Failed'}`;
+          drop.classList.remove('file-loaded');
+          updateProcessButton(false);
+        }
+      });
+    }
+
+    function handleLeave(file){
+      if(!file) return;
+      const fileName = file.name;
+      Papa.parse(file,{
+        header:true,
+        skipEmptyLines:true,
+        complete: res => {
+          leaveRows = res.data;
+          log(`${leaveRows.length} leave rows parsed from: ${fileName}`);
+          leaveFileStatus.textContent = fileName;
+          leaveFileStatusWrap.classList.remove('hidden');
+          leaveDrop.classList.add('file-loaded');
+          leaveInput.value = '';
+          if (isProcessed) {
+              log('Leave file updated. Please re-process to include new leave data.');
+              updateProcessButton(false);
+          }
+        },
+        error: err => {
+          log(`Parse error (leave): ${err?.message || err}`);
+          leaveFileStatus.textContent = `Error: ${err?.message || 'Parse Failed'}`;
+          leaveDrop.classList.remove('file-loaded');
+        }
+      });
+    }
+
+    fileInput.addEventListener('change', e => handleFile(e.target.files[0]));
+    leaveInput.addEventListener('change', e => handleLeave(e.target.files[0]));
+
+    ;['dragenter','dragover'].forEach(evt => drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.add('dragover'); }));
+    ;['dragleave','drop'].forEach(evt => drop.addEventListener(evt, e=>{ e.preventDefault(); drop.classList.remove('dragover'); }));
+    drop.addEventListener('drop', e => handleFile(e.dataTransfer.files[0]));
+
+    ;['dragenter','dragover'].forEach(evt => leaveDrop.addEventListener(evt, e=>{ e.preventDefault(); leaveDrop.classList.add('dragover'); }));
+    ;['dragleave','drop'].forEach(evt => leaveDrop.addEventListener(evt, e=>{ e.preventDefault(); leaveDrop.classList.remove('dragover'); }));
+    leaveDrop.addEventListener('drop', e => handleLeave(e.dataTransfer.files[0]));
+    
+    // --- MATRIX BUILD LOGIC (Unchanged core functionality) ---
+    function buildMatrix(shiftRows, leaveRows){
+      if (!shiftRows.length) return [];
+      
+      const {weekStart, weekEnd} = buildWeekWindowFromShifts(shiftRows);
+      currentWeekStart = weekStart;
+      currentWeekEnd = weekEnd;
+
+      const fillEmptyCellsWithOff = offToggle.checked;
+      const defaultCell = fillEmptyCellsWithOff ? 'Off' : '';
+      
+      if (!weekStart) {
+         log("Warning: Could not determine week window from shift CSV dates. Leave date filtering will be skipped.");
+      } else {
+         const weekNumber = getWeekNumber(weekStart);
+         const wsStr = weekStart.toLocaleDateString('en-GB');
+         const weStr = weekEnd.toLocaleDateString('en-GB');
+         log(`Detected Week ${weekNumber}: ${wsStr} - ${weStr}`);
+      }
+      
+      const leaveMap = buildLeaveMap(leaveRows, weekStart, weekEnd);
+      const byKey = new Map();
+      const processedLeaveEntries = new Set();
+      const dayKeysShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+      // 1. Process shifts and initialize records with leave overrides
+      for(const r of shiftRows){
+        const id = coalesceID(r);
+        const emp = String(r['Employee'] || '').trim();
+        const key = id || normName(emp); 
+        if(!key) continue;
+
+        if(!byKey.has(key)){
+          byKey.set(key,{
+            _id: id,
+            RotaCloudID: id,
+            FourthID: extractNumericCode(emp),
+            Employee: emp,
+            Group: String(r['Group'] || 'Shift').trim(),
+            Location: String(r['Location']||'').trim(),
+            Hours: 0,
+            'Mon Start': defaultCell, 'Mon Finish': defaultCell, 'Tue Start': defaultCell, 'Tue Finish': defaultCell, 
+            'Wed Start': defaultCell, 'Wed Finish': defaultCell, 'Thu Start': defaultCell, 'Thu Finish': defaultCell, 
+            'Fri Start': defaultCell, 'Fri Finish': defaultCell, 'Sat Start': defaultCell, 'Sat Finish': defaultCell, 
+            'Sun Start': defaultCell, 'Sun Finish': defaultCell
+          });
+        }
+        
+        const day = normaliseDay(r['Day']); 
+        if(!day) continue;
+
+        const rec = byKey.get(key);
+        let leaveEntry = leaveMap.get(id) || leaveMap.get(normName(emp));
+        
+        // --- Proactive Holiday Injection ---
+        if (leaveEntry) {
+            processedLeaveEntries.add(leaveEntry);
+            const leaveLabel = leaveEntry.label || 'Holiday';
+            
+            for (const leaveDay of dayKeysShort) {
+                if (leaveEntry.byDay.has(leaveDay)) {
+                    if (rec[`${leaveDay} Start`] === defaultCell || rec[`${leaveDay} Start`] === '') {
+                        rec[`${leaveDay} Start`] = leaveLabel;
+                        rec[`${leaveDay} Finish`] = leaveLabel;
+                    }
+                }
+            }
+            
+            const currentRecGroup = rec.Group;
+            const currentShiftGroup = String(r['Group']||'').trim();
+
+            if (currentShiftGroup && currentShiftGroup !== 'Shift') {
+               rec.Group = currentShiftGroup;
+            } else if (currentRecGroup === 'Shift' || currentRecGroup === '') {
+                rec.Group = leaveLabel;
+            }
+        }
+        // --- End Holiday Injection ---
+
+        const st = adjustTime(r['Start Time']);
+        const et = adjustTime(r['End Time']);
+        rec[`${day} Start`] = st;
+        rec[`${day} Finish`] = et;
+
+        const shiftGroup = String(r['Group']||'').trim();
+        if (shiftGroup && shiftGroup !== 'Shift') {
+           rec.Group = shiftGroup;
+        }
+
+        const h = parseNumber(r['Hours']);
+        rec.Hours += Number.isFinite(h) ? h : 0;
+      }
+
+      // 2. Inject people who only exist in leave file (Leave-only individuals)
+      for(const [k, entry] of leaveMap.entries()){
+          if (processedLeaveEntries.has(entry) || byKey.has(k)) continue; 
+
+          const name = entry.name || '';
+          const id = entry.id || '';
+          const leaveLabel = entry.label || 'Holiday';
+          
+          const rec = {
+            _id: id,
+            RotaCloudID: id,
+            FourthID: extractNumericCode(name), 
+            Employee: name,
+            Group: leaveLabel, 
+            Location: '',
+            Hours: 0, 
+            'Mon Start': defaultCell, 'Mon Finish': defaultCell, 'Tue Start': defaultCell, 'Tue Finish': defaultCell, 
+            'Wed Start': defaultCell, 'Wed Finish': defaultCell, 'Thu Start': defaultCell, 'Thu Finish': defaultCell, 
+            'Fri Start': defaultCell, 'Fri Finish': defaultCell, 'Sat Start': defaultCell, 'Sat Finish': defaultCell, 
+            'Sun Start': defaultCell, 'Sun Finish': defaultCell
+          };
+          
+          const dayKeysShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+          for(const d of dayKeysShort){
+            if(entry.byDay.has(d)){
+                rec[`${d} Start`] = leaveLabel;
+                rec[`${d} Finish`] = leaveLabel;
+            }
+          }
+          byKey.set(k, rec); 
+          processedLeaveEntries.add(entry);
+      }
+
+      let out = Array.from(byKey.values()).map(({_id, ...rest}) => ({...rest, Hours: Math.round(rest.Hours)}));
+      out.sort((a,b)=>{
+        const an = (a.Employee || '').toLowerCase();
+        const bn = (b.Employee || '').toLowerCase();
+        const nameComparison = an.localeCompare(bn);
+        if (nameComparison !== 0) return nameComparison;
+        return String(a.RotaCloudID || '').localeCompare(String(b.RotaCloudID || ''));
+      });
+
+      return out;
+    }
+
+    function renderPreview(rows){
+      previewWrap.classList.remove('hidden');
+      prevThead.innerHTML = '';
+      prevTbody.innerHTML = '';
+      if(!rows.length) return;
+      
+      const cols = ['RotaCloudID','FourthID','Employee','Group','Location','Hours',...dayKeys];
+      const tr = document.createElement('tr');
+      for(const c of cols){ 
+        const th = document.createElement('th'); 
+        th.className = 'px-2 py-2 font-medium border-b border-slate-200 dark:border-slate-600'; 
+        th.textContent = c; 
+        tr.appendChild(th); 
+      }
+      prevThead.appendChild(tr);
+
+      const maxRows = Math.min(5, rows.length);
+      for(let i=0;i<maxRows;i++){
+        const r = rows[i];
+        const trb = document.createElement('tr');
+        for(const c of cols){ 
+          const td = document.createElement('td'); 
+          td.className = 'px-2 py-2'; 
+          td.textContent = r[c] ?? ''; 
+          trb.appendChild(td); 
+        }
+        prevTbody.appendChild(trb); 
+      }
+      previewCount.textContent = `${Math.min(5, rows.length)} of ${rows.length} shown`;
+    }
+
+    document.getElementById('processBtn').addEventListener('click', () => {
+      if (isProcessed) {
+        // RESET functionality
+        clearMainFile();
+        clearLeaveFile();
+        logEl.textContent = '';
+        log('System reset. Please load files to begin processing.');
+        return;
+      }
+
+      if(!parsedRows.length){ log('Load the main shifts CSV first.'); return; }
+      log('Processing...');
+      try{
+        outputRows = buildMatrix(parsedRows, leaveRows);
+        log(`Done. ${outputRows.length} employees processed.`);
+        renderPreview(outputRows);
+        updateProcessButton(true);
+      } catch(err){ log(`Process error: ${err?.message || err}`); console.error(err); }
+    });
+
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      if(!outputRows.length){ log('Nothing to download.'); return; }
+      const cols = ['RotaCloudID','FourthID','Employee','Group','Location','Hours',...dayKeys];
+      const data = [cols, ...outputRows.map(r => cols.map(c => r[c] ?? ''))];
+      const ws = XLSX.utils.aoa_to_sheet(data);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Weekly Matrix');
+      const wsDate = currentWeekStart ? currentWeekStart.toLocaleDateString('en-GB').replace(/\//g, '-') : new Date().toISOString().slice(0,10);
+      const fname = `shift_matrix_week${currentWeekStart ? getWeekNumber(currentWeekStart) : ''}_${wsDate}.xlsx`;
+      XLSX.writeFile(wb, fname);
+      log(`Saved ${fname}`);
+    });
+  </script>
+</body>
+</html>
